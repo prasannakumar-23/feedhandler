@@ -53,3 +53,7 @@ No real replay or snapshot channel, no multicast, no kernel bypass, single instr
 4,096-tick window. It is a study of the receive path, not an exchange connection.
 
 MIT licence.
+
+## Replay page
+`docs/index.html` is a static page that replays a recorded run (`docs/trace.json`, produced by `make trace`).
+Serve the `docs` folder with any static host, for example GitHub Pages (Settings, Pages, branch `main`, folder `/docs`).
