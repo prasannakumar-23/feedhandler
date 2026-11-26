@@ -1,0 +1,157 @@
+<title>Feed Handler Replay</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: controls, then a seq-number map (the network), the current packet and the rebuilt book side by side, then verification. Palette: ink on paper; teal applied, amber recovered, rust lost. */
+:root{--bg:#f6f7f8;--panel:#fff;--fg:#14191f;--mute:#5d6874;--line:#dde2e7;--ok:#0b7a6b;--okbg:#d3eee9;--rec:#a86b00;--recbg:#fbe8c2;--lost:#b4412a;--lostbg:#f6dcd5;--held:#3b5bdb;--heldbg:#dfe6fb;--cur:#14191f;--accent:#1d4ed8;
+--sans:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1216;--panel:#161c22;--fg:#e6eaee;--mute:#8d99a5;--line:#27313a;--ok:#3fd0b8;--okbg:#103a35;--rec:#f2c744;--recbg:#463710;--lost:#ff8a6d;--lostbg:#47241b;--held:#8ea6ff;--heldbg:#1f2a4d;--cur:#e6eaee;--accent:#7aa2ff;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e1216;--panel:#161c22;--fg:#e6eaee;--mute:#8d99a5;--line:#27313a;--ok:#3fd0b8;--okbg:#103a35;--rec:#f2c744;--recbg:#463710;--lost:#ff8a6d;--lostbg:#47241b;--held:#8ea6ff;--heldbg:#1f2a4d;--cur:#e6eaee;--accent:#7aa2ff;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);padding-block:20px 32px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-size:1.5rem;margin:0;font-weight:600;text-wrap:balance}
+.sub{color:var(--mute);margin:4px 0 0;max-width:70ch;line-height:1.5}
+.badge{display:inline-block;font:500 .72rem var(--mono);letter-spacing:.04em;text-transform:uppercase;border:1px solid var(--line);border-radius:4px;padding:2px 6px;color:var(--mute)}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+button,select{font:500 .85rem var(--sans);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);min-width:78px}
+input[type=range]{flex:1;min-width:140px;accent-color:var(--accent)}
+.pos{font:500 .85rem var(--mono);color:var(--mute);min-width:9ch;text-align:right}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.panel h2{font:600 .78rem var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin:0 0 10px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}}
+.map{display:grid;grid-template-columns:repeat(auto-fill,minmax(14px,1fr));gap:3px}
+.c{height:14px;border-radius:3px;background:var(--line)}
+.c.ok{background:var(--ok)}.c.rec{background:var(--rec)}.c.lost{background:var(--lostbg);outline:1px solid var(--lost)}.c.held{background:var(--heldbg);outline:1px solid var(--held)}
+.c.cur{outline:2px solid var(--cur);outline-offset:1px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:.8rem;color:var(--mute)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px;background:var(--line)}
+.cur-box{font:500 .92rem var(--mono);line-height:1.6;min-height:5.5em}
+.tag{display:inline-block;padding:1px 7px;border-radius:4px;font:600 .75rem var(--mono);margin-right:4px}
+.tag.ok{background:var(--okbg);color:var(--ok)}.tag.rec{background:var(--recbg);color:var(--rec)}.tag.lost{background:var(--lostbg);color:var(--lost)}.tag.held{background:var(--heldbg);color:var(--held)}.tag.n{background:var(--line);color:var(--mute)}
+.lad{font:.85rem var(--mono);display:flex;flex-direction:column;gap:2px}
+.row{display:grid;grid-template-columns:5ch 1fr 6ch;gap:8px;align-items:center;height:20px}
+.row .p{text-align:right}.row .q{text-align:right;color:var(--mute)}
+.fill{height:14px;border-radius:2px}
+.a .fill{background:var(--lostbg);border:1px solid var(--lost)}.b .fill{background:var(--okbg);border:1px solid var(--ok)}
+.a .p{color:var(--lost)}.b .p{color:var(--ok)}
+.sp{border-block:1px dashed var(--line);margin:3px 0;height:1px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.stats div{border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:.78rem;color:var(--mute)}
+.stats b{display:block;font:600 1.1rem var(--mono);color:var(--fg)}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:0;padding:0;list-style:none}
+.facts li{border:1px solid var(--line);border-radius:6px;padding:9px 11px;line-height:1.4;font-size:.88rem}
+.facts strong{display:block;font:600 1.02rem var(--mono);margin-bottom:2px}
+.note{font-size:.82rem;color:var(--mute);line-height:1.55;max-width:90ch;margin:0}
+.note a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.85em}
+</style>
+<div class="wrap">
+ <header>
+  <h1>Feed Handler Replay</h1>
+  <p class="sub">A binary market-data feed arrives with packets lost, duplicated and reordered. The C++ receive path detects each fault, replays what is missing and delivers every message once, in order, so the rebuilt book ends up identical to the sender's. Step through 300 packets of a recorded run.</p>
+  <p style="margin:8px 0 0"><span class="badge">recorded run, not a live server</span> <span class="badge">C++17</span> <span class="badge">lock-free SPSC ring</span> <span class="badge">sequence-gap recovery</span></p>
+ </header>
+
+ <div class="bar" role="group" aria-label="Playback">
+  <button id="play" class="primary">Play</button>
+  <button id="prev" aria-label="Step back">&larr;</button>
+  <button id="next" aria-label="Step forward">&rarr;</button>
+  <input id="scrub" type="range" min="0" max="0" value="0" aria-label="Position">
+  <span class="pos" id="pos">0 / 0</span>
+  <label>Speed <select id="speed"><option value="500">Slow</option><option value="200" selected>Normal</option><option value="70">Fast</option><option value="20">Very fast</option></select></label>
+ </div>
+
+ <section class="panel" aria-labelledby="h-map">
+  <h2 id="h-map">Sequence numbers 1 to 300</h2>
+  <div class="map" id="map"></div>
+  <div class="legend">
+   <span><i style="background:var(--ok)"></i>delivered in order</span>
+   <span><i style="background:var(--rec)"></i>recovered by replay</span>
+   <span><i style="background:var(--heldbg);outline:1px solid var(--held)"></i>arrived early, held</span>
+   <span><i style="background:var(--lostbg);outline:1px solid var(--lost)"></i>lost on the wire</span>
+   <span><i></i>not seen yet</span>
+  </div>
+ </section>
+
+ <div class="grid">
+  <section class="panel"><h2>Packet on the wire</h2><div class="cur-box" id="cur"></div></section>
+  <section class="panel"><h2>Book rebuilt so far, top 6 levels</h2><div class="lad" id="lad"></div></section>
+ </div>
+
+ <section class="panel"><h2>Counters up to this point</h2><div class="stats" id="stats"></div></section>
+
+ <section class="panel">
+  <h2>What was verified</h2>
+  <ul class="facts">
+   <li><strong>Same book at the end</strong>with random loss up to 40%, duplicates and reordering, across 300 seeds: every message delivered exactly once, in order, and the final book matches the sender's</li>
+   <li><strong>1,440 checks</strong>pass, also under ThreadSanitizer and ASan + UBSan</li>
+   <li><strong>7 of 7 injected bugs caught</strong>one of them (a relaxed instead of release store in the ring buffer) only by ThreadSanitizer, because x86 hides it</li>
+   <li><strong>Over real UDP sockets</strong>a 100,000-packet run with 2% loss, 1% duplicates and 1% reordering rebuilt an identical book</li>
+  </ul>
+  <p class="note" style="margin-top:10px">Measured on a shared 2-vCPU Linux sandbox, so indicative only: the ring buffer moved 9M items at about 27M items/s with order preserved, and hand-off latency from push to apply had a median under 1 &micro;s. Tail latencies there were dominated by the virtual machine's scheduler, so no tail figure is claimed.</p>
+ </section>
+
+ <p class="note" id="trace-note"></p>
+ <p class="note" id="repo"></p>
+</div>
+<script>
+(function(){
+var REPO=""; // set to the public repository URL once it exists
+var T=null,i=0,timer=null,$=function(id){return document.getElementById(id)};
+function build(){var m=$('map'),h='';for(var s=1;s<=T.packets;s++)h+='<div class="c" data-s="'+s+'" title="seq '+s+'"></div>';m.innerHTML=h;}
+function render(){
+  var st=new Array(T.packets+2).fill(0); // 0 unseen,1 delivered,2 recovered,3 held,4 lost
+  var cnt={arr:0,lost:0,dup:0,held:0,rep:0,del:0};
+  for(var k=0;k<=i;k++){
+    var e=T.events[k];
+    if(e.k==='lost'){st[e.seq]=4;cnt.lost++;continue}
+    cnt.arr++;
+    if(e.dup)cnt.dup++;
+    if(e.held){cnt.held++;if(st[e.seq]!==1&&st[e.seq]!==2)st[e.seq]=3}
+    if(e.gap)cnt.rep+=e.gap[2];
+    for(var j=0;j<e.out.length;j++){st[e.out[j][0]]=e.out[j][1]?2:1;cnt.del++}
+  }
+  var e=T.events[i],cells=$('map').children,cls=['c','c ok','c rec','c held','c lost'];
+  for(var s=1;s<=T.packets;s++)cells[s-1].className=cls[st[s]]+((e.seq===s)?' cur':'');
+  // current packet
+  var h='';
+  if(e.k==='lost'){h='<span class="tag lost">LOST</span> seq '+e.seq+' never reaches the receiver.<br>It will be noticed as a hole when later packets arrive.';}
+  else if(e.t==='H'){h='<span class="tag n">HEARTBEAT</span> sender says last seq is '+e.seq+'.<br>'+(e.gap?'<span class="tag rec">REPLAY</span> asks for '+e.gap[2]+' missing at the tail.':'Nothing missing.');}
+  else{
+    var d=e.t==='A'?'ADD '+(e.side==='B'?'BUY':'SELL')+' '+e.qty+' @ '+e.px:e.t==='X'?'CANCEL':'EXECUTE '+e.qty;
+    h='<b>seq '+e.seq+'</b> &middot; '+d+' &middot; order #'+e.id+'<br>';
+    if(e.dup)h+='<span class="tag n">DUPLICATE</span> already delivered, dropped.';
+    else if(e.held)h+='<span class="tag held">EARLY</span> a lower seq is missing, held until the hole closes.';
+    else h+='<span class="tag ok">IN ORDER</span> delivered.';
+    if(e.gap)h+=' <span class="tag rec">REPLAY</span> hole '+e.gap[0]+'&ndash;'+e.gap[1]+', fetched '+e.gap[2]+' missing.';
+    if(e.out.length)h+='<br>delivered to the book: '+e.out.map(function(o){return o[0]+(o[1]?'*':'')}).join(', ')+(e.out.some(function(o){return o[1]})?' &nbsp;(* = replayed)':'');
+  }
+  $('cur').innerHTML=h;
+  // book from latest rx event
+  var b=null;for(var q=i;q>=0;q--){if(T.events[q].bids){b=T.events[q];break}}
+  var L='';
+  if(b){
+    var mx=1;b.bids.concat(b.asks).forEach(function(l){if(l[1]>mx)mx=l[1]});
+    var row=function(l,c){return '<div class="row '+c+'"><span class="p">'+l[0]+'</span><div><div class="fill" style="width:'+Math.max(2,l[1]/mx*100)+'%"></div></div><span class="q">'+l[1]+'</span></div>'};
+    L=b.asks.slice().reverse().map(function(l){return row(l,'a')}).join('')+'<div class="sp"></div>'+b.bids.map(function(l){return row(l,'b')}).join('');
+  }
+  $('lad').innerHTML=L;
+  $('stats').innerHTML=[['arrived',cnt.arr],['lost on wire',cnt.lost],['duplicates dropped',cnt.dup],['arrived early',cnt.held],['replayed',cnt.rep],['delivered',cnt.del]].map(function(x){return '<div>'+x[0]+'<b>'+x[1]+'</b></div>'}).join('');
+  $('scrub').value=i;$('pos').textContent=(i+1)+' / '+T.events.length;
+}
+function go(n){i=Math.max(0,Math.min(T.events.length-1,n));render()}
+function stop(){if(timer){clearInterval(timer);timer=null}$('play').textContent='Play'}
+function play(){if(timer){stop();return}if(i>=T.events.length-1)i=0;$('play').textContent='Pause';timer=setInterval(function(){if(i>=T.events.length-1){stop();return}go(i+1)},+$('speed').value)}
+fetch('trace.json').then(function(r){return r.json()}).then(function(d){
+  T=d;build();$('scrub').max=d.events.length-1;
+  $('trace-note').innerHTML='Run parameters: seed '+d.seed+', '+d.packets+' packets, '+Math.round(d.drop*100)+'% dropped, '+Math.round(d.dup*100)+'% duplicated, '+Math.round(d.reorder*100)+'% reordered. Result: all '+d.delivered+' delivered once and in order, '+d.duplicates+' duplicates dropped, '+d.retransmitted+' packets replayed, final book digest <code>'+d.digest+'</code> '+(d.digestMatches?'equal to the sender\'s.':'DIFFERENT from the sender\'s.')+' The replay is produced by the same handler and book code the UDP pipeline uses; only the network is simulated here, with a seeded generator.';
+  go(0);
+}).catch(function(){$('cur').textContent='Could not load the recorded trace.'});
+if(REPO)$('repo').innerHTML='Source and tests: <a href="'+REPO+'" target="_blank" rel="noopener">'+REPO+'</a>';
+$('play').onclick=play;$('next').onclick=function(){stop();go(i+1)};$('prev').onclick=function(){stop();go(i-1)};
+$('scrub').oninput=function(){stop();go(+this.value)};$('speed').onchange=function(){if(timer){stop();play()}};
+})();
+</script>
